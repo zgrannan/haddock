@@ -27,7 +27,6 @@ import Haddock.Types hiding (Version)
 import Haddock.Utils hiding (out)
 
 import GHC
--- import GHC.Driver.Ppr hiding (showSDoc)
 import GHC.Driver.Session
 import GHC.Utils.Outputable as Outputable hiding (showSDoc)
 import GHC.Parser.Annotation (IsUnicodeSyntax(..))
@@ -129,7 +128,7 @@ operator (x:xs) | not (isAlphaNum x) && x `notElem` "_' ([{" = '(' : x:xs ++ ")"
 operator x = x
 
 commaSeparate :: Outputable a => DynFlags -> [a] -> String
-commaSeparate dflags = showSDocUnqual dflags . interpp'SP
+commaSeparate dflags = showSDoc dflags . interpp'SP
 
 ---------------------------------------------------------------------
 -- How to print each export
@@ -190,7 +189,7 @@ ppClass dflags decl subdocs =
 
         ppTyFams
             | null $ tcdATs decl = ""
-            | otherwise = (" " ++) . showSDocUnqual dflags . whereWrapper $ concat
+            | otherwise = (" " ++) . showSDoc dflags . whereWrapper $ concat
                 [ map pprTyFam (tcdATs decl)
                 , map (pprTyFamInstDecl NotTopLevel . unLoc) (tcdATDefs decl)
                 ]
@@ -232,9 +231,9 @@ ppSynonym dflags x = [out dflags x]
 
 ppData :: DynFlags -> TyClDecl GhcRn -> [(Name, DocForDecl Name)] -> [String]
 ppData dflags decl@(DataDecl { tcdDataDefn = defn }) subdocs
-    = showData decl{ tcdDataDefn = defn { dd_cons=[],dd_derivs=noLoc [] }} :
-      showCons dflags decl (map unLoc $ dd_cons defn) :
-      concatMap (ppCtor dflags decl subdocs . unLoc) (dd_cons defn)
+    =  showData decl{ tcdDataDefn = defn { dd_cons=[],dd_derivs=noLoc [] }} :
+       concatMap (ppCtor dflags decl subdocs . unLoc) (dd_cons defn) ++
+       [showCons dflags decl (map unLoc $ dd_cons defn)]
     where
 
         -- GHC gives out "data Bar =", we want to delete the equals.
@@ -254,14 +253,7 @@ lookupCon dflags subdocs (L _ name) = case lookup name subdocs of
 showCons :: DynFlags -> TyClDecl GhcRn -> [ConDecl GhcRn] -> String
 showCons dflags dat cons = "constructors " ++ out dflags resType ++ " " ++ names
   where
-    tyVarArg (UserTyVar _ _ n) = HsTyVar noExtField NotPromoted n
-    tyVarArg (KindedTyVar _ _ n lty) = HsKindSig noExtField (reL (HsTyVar noExtField NotPromoted n)) lty
-    tyVarArg _ = panic "ppCtor"
-
-    apps = foldl1 (\x y -> reL $ HsAppTy noExtField x y)
-    resType = apps $ map reL $
-                    (HsTyVar noExtField NotPromoted (reL (tcdName dat))) :
-                    map (tyVarArg . unLoc) (hsQTvExplicit $ tyClDeclTyVars dat)
+    resType = tcdName dat
     names = unwords $ map (out dflags . unL) $ concatMap getConNames cons
 
 ppCtor :: DynFlags -> TyClDecl GhcRn -> [(Name, DocForDecl Name)] -> ConDecl GhcRn -> [String]
@@ -300,10 +292,6 @@ ppCtor dflags _dat subdocs con@(ConDeclGADT { })
 
         typeSig nm ty = operator nm ++ " :: " ++ outHsType dflags (unLoc ty)
         name = out dflags $ map unLoc $ getConNames con
-
-ppFixity :: DynFlags -> (Name, Fixity) -> [String]
-ppFixity dflags (name, fixity) = [out dflags ((FixitySig noExtField [noLoc name] fixity) :: FixitySig GhcRn)]
-
 
 ---------------------------------------------------------------------
 -- DOCUMENTATION
