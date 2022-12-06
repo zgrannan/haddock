@@ -27,9 +27,9 @@ import Haddock.Types hiding (Version)
 import Haddock.Utils hiding (out)
 
 import GHC
-import GHC.Driver.Ppr hiding (showSDoc)
+-- import GHC.Driver.Ppr hiding (showSDoc)
 import GHC.Driver.Session
-import GHC.Utils.Outputable as Outputable
+import GHC.Utils.Outputable as Outputable hiding (showSDoc)
 import GHC.Parser.Annotation (IsUnicodeSyntax(..))
 
 import Prelude hiding (mod)
@@ -43,7 +43,7 @@ import System.Directory
 import System.FilePath
 
 showSDoc :: DynFlags -> SDoc -> String
-showSDoc dflags = renderWithContext
+showSDoc dflags = renderWithStyle
   (initSDocContext dflags (mkUserStyle qualify AllTheWay))
   where
     qualify :: PrintUnqualified
@@ -122,7 +122,7 @@ outWith p = f . unwords . map (dropWhile isSpace) . lines . p . ppr
         f [] = []
 
 out :: Outputable a => DynFlags -> a -> String
-out dflags = outWith $ showSDocUnqual dflags
+out dflags = outWith $ showSDoc dflags
 
 operator :: String -> String
 operator (x:xs) | not (isAlphaNum x) && x `notElem` "_' ([{" = '(' : x:xs ++ ")"
@@ -154,7 +154,8 @@ ppExport dflags ExportDecl { expItemDecl    = L _ decl
         f (SigD _ sig) = ppSig dflags sig
         f _ = []
 
-        ppFixities = concatMap (ppFixity dflags) fixities
+        -- Don't output fixities for rulecheck
+        ppFixities = [] -- concatMap (ppFixity dflags) fixities
 ppExport _ _ = []
 
 ppSigWithDoc :: DynFlags -> Sig GhcRn -> [(Name, DocForDecl Name)] -> [String]
@@ -231,7 +232,7 @@ ppSynonym dflags x = [out dflags x]
 
 ppData :: DynFlags -> TyClDecl GhcRn -> [(Name, DocForDecl Name)] -> [String]
 ppData dflags decl@(DataDecl { tcdDataDefn = defn }) subdocs
-    = showData decl{ tcdDataDefn = defn { dd_cons=[],dd_derivs=[] }} :
+    = showData decl{ tcdDataDefn = defn { dd_cons=[],dd_derivs=noLoc [] }} :
       showCons dflags decl (map unLoc $ dd_cons defn) :
       concatMap (ppCtor dflags decl subdocs . unLoc) (dd_cons defn)
     where
@@ -253,13 +254,13 @@ lookupCon dflags subdocs (L _ name) = case lookup name subdocs of
 showCons :: DynFlags -> TyClDecl GhcRn -> [ConDecl GhcRn] -> String
 showCons dflags dat cons = "constructors " ++ out dflags resType ++ " " ++ names
   where
-    tyVarArg (UserTyVar _ _ n) = HsTyVar noAnn NotPromoted n
-    tyVarArg (KindedTyVar _ _ n lty) = HsKindSig noAnn (reL (HsTyVar noAnn NotPromoted n)) lty
+    tyVarArg (UserTyVar _ _ n) = HsTyVar noExtField NotPromoted n
+    tyVarArg (KindedTyVar _ _ n lty) = HsKindSig noExtField (reL (HsTyVar noExtField NotPromoted n)) lty
     tyVarArg _ = panic "ppCtor"
 
     apps = foldl1 (\x y -> reL $ HsAppTy noExtField x y)
     resType = apps $ map reL $
-                    (HsTyVar noAnn NotPromoted (reL (tcdName dat))) :
+                    (HsTyVar noExtField NotPromoted (reL (tcdName dat))) :
                     map (tyVarArg . unLoc) (hsQTvExplicit $ tyClDeclTyVars dat)
     names = unwords $ map (out dflags . unL) $ concatMap getConNames cons
 
