@@ -50,6 +50,7 @@ showSDoc dflags = renderWithStyle
 
     q :: QueryQualifyName
     q mod _ | moduleNameString (moduleName mod) == "GHC.Types" = NameUnqual
+    q mod _ | moduleNameString (moduleName mod) == "GHC.Base" = NameUnqual
     q mod _ = NameQual (moduleName mod)
 
 
@@ -233,8 +234,11 @@ ppData :: DynFlags -> TyClDecl GhcRn -> [(Name, DocForDecl Name)] -> [String]
 ppData dflags decl@(DataDecl { tcdDataDefn = defn }) subdocs
     =  showData decl{ tcdDataDefn = defn { dd_cons=[],dd_derivs=noLoc [] }} :
        concatMap (ppCtor dflags decl subdocs . unLoc) (dd_cons defn) ++
-       [showCons dflags decl (map unLoc $ dd_cons defn)]
+       consPart
     where
+        consPart = if (null $ dd_cons defn)
+          then []
+          else [showCons dflags decl (map unLoc $ dd_cons defn)]
 
         -- GHC gives out "data Bar =", we want to delete the equals.
         -- There's no need to worry about parenthesizing infix data type names,
